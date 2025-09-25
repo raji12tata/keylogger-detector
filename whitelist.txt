@@ -1,0 +1,11 @@
+# whitelist common legitimate process substrings
+chrome
+firefox
+msedge
+explorer
+python
+svchost
+system
+wininit
+winlogon
+services

@@ -1,0 +1,10 @@
+# suspicious process name patterns (lowercase substrings)
+keylogger
+logger
+kl
+hook
+spy
+capture
+keystroke
+logkeys
+winlogon.exe.key  # example comments allowed
