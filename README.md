@@ -44,34 +44,34 @@ cd keylogger-detector
 
 2. (Optional) Create a virtual environment:
 
-python -m venv venv
-venv\Scripts\activate
+   python -m venv venv
+   venv\Scripts\activate
 
 3. Install dependencies:
 
-pip install -r requirements.txt
+   pip install -r requirements.txt
 
 4. Running the Detector
 
-Run the main program:
+   Run the main program:
 
-python detector.py
+   python detector.py
 
 5. Running Tests
 
-Tests are located in the tests/ folder.
+   Tests are located in the tests/ folder.
 
-Run all tests using pytest:
+   Run all tests using pytest:
 
-pytest tests/
+   pytest tests/
 
 6. To view all logs together in PowerShell:
 
-Get-Content .\logs\*.log
+   Get-Content .\logs\*.log
 
 ## Screenshots
 
-![Keylogger Detector Scan](screenshots/scan_output.png)
+    ![Keylogger Detector Scan](screenshots/scan_output.png)
 
 ## License
 
