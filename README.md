@@ -13,6 +13,10 @@ It scans running processes, compares them against a whitelist and a suspicious l
 - Configurable whitelist and suspicious process list
 - Unit tests available in `tests/`
 
+## Screenshots
+
+![Keylogger Detector Scan](screenshots/scan_output.png)
+
 ## Installation
 
 1. Clone the repository:
