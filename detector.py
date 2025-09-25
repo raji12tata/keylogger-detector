@@ -18,10 +18,14 @@ from notifier import notify_console
 
 colorama_init(autoreset=True)
 
-# Setup logging
+# -----------------------------
+# Setup logs folder
+# -----------------------------
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 logfile = os.path.join(LOG_DIR, f"detector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+
+# Configure logging
 logging.basicConfig(
     filename=logfile,
     level=logging.INFO,
@@ -31,7 +35,9 @@ console = logging.StreamHandler()
 console.setLevel(logging.INFO)
 logging.getLogger("").addHandler(console)
 
+# -----------------------------
 # Load configuration
+# -----------------------------
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     CONFIG = yaml.safe_load(f)
@@ -41,60 +47,83 @@ WHITELIST_PATH = os.path.join(os.path.dirname(__file__), "whitelist.txt")
 
 inspector = Inspector(suspicious_list_path=SUSPICIOUS_LIST_PATH, whitelist_path=WHITELIST_PATH)
 
+# -----------------------------
+# Logging helper
+# -----------------------------
+def write_log(message, level="info"):
+    """
+    Log message to both console and log file
+    level: 'info' or 'warning'
+    """
+    if level == "warning":
+        logging.warning(message)
+    else:
+        logging.info(message)
+    print(message)  # keep console output
+
+# -----------------------------
+# Scan running processes
+# -----------------------------
 def scan_processes():
-    print(Fore.CYAN + "[*] Scanning running processes..." + Style.RESET_ALL)
-    logging.info("Starting process scan")
+    write_log(Fore.CYAN + "[*] Scanning running processes..." + Style.RESET_ALL)
+    write_log("Starting process scan")
     detections = []
+
     for proc in psutil.process_iter(['pid', 'name', 'exe', 'username']):
         try:
             pid = proc.info['pid']
             name = (proc.info['name'] or "").lower()
             exe = proc.info.get('exe') or ""
             username = proc.info.get('username') or ""
+
             reason = inspector.inspect_process(name=name, exe_path=exe)
             if reason:
                 detection = {
                     "pid": pid, "name": name, "exe": exe, "username": username, "reason": reason
                 }
                 detections.append(detection)
-                logging.warning(f"Suspicious: {detection}")
+                write_log(f"[!] Suspicious process detected: {detection}", level="warning")
                 notify_console(detection)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
     if not detections:
-        print(Fore.GREEN + "[✓] No suspicious processes detected." + Style.RESET_ALL)
-        logging.info("No suspicious processes detected.")
+        write_log(Fore.GREEN + "[✓] No suspicious processes detected." + Style.RESET_ALL)
+
     return detections
 
+# -----------------------------
+# Run full scan
+# -----------------------------
 def run_full_scan():
-    logging.info("Running full scan")
-    print(Fore.MAGENTA + "=== Keylogger Detector: Full Scan ===" + Style.RESET_ALL)
+    write_log(Fore.MAGENTA + "=== Keylogger Detector: Full Scan ===" + Style.RESET_ALL)
+    
     # 1. Processes
     proc_detections = scan_processes()
 
-    # 2. Optionally inspect autostart (Windows registry) and scheduled tasks
+    # 2. Optional: Inspect autostart entries
     if CONFIG.get("inspect_autostart", False):
         try:
             ats = inspector.inspect_autostart()
             if ats:
                 for item in ats:
-                    logging.warning(f"Autostart suspicion: {item}")
+                    write_log(f"[!] Autostart suspicion: {item}", level="warning")
                     notify_console(item)
         except Exception as e:
             logging.exception("Autostart inspection failed")
 
+    # 3. Optional: Inspect scheduled tasks
     if CONFIG.get("inspect_scheduled_tasks", False):
         try:
             st = inspector.inspect_scheduled_tasks()
             if st:
                 for item in st:
-                    logging.warning(f"Scheduled task suspicion: {item}")
+                    write_log(f"[!] Scheduled task suspicion: {item}", level="warning")
                     notify_console(item)
         except Exception as e:
             logging.exception("Scheduled task inspection failed")
 
-    # 3. Optionally deep inspect suspicious executables (hashing, size check)
+    # 4. Optional: Deep inspect suspicious EXEs
     if CONFIG.get("deep_inspect", False):
         for d in proc_detections:
             exe = d.get("exe")
@@ -102,14 +131,17 @@ def run_full_scan():
                 try:
                     deep = inspector.deep_inspect_exe(exe)
                     if deep:
-                        logging.warning(f"Deep inspect result for {exe}: {deep}")
+                        write_log(f"[!] Deep inspect result for {exe}: {deep}", level="warning")
                         notify_console({"exe": exe, "reason": deep})
                 except Exception:
-                    logging.exception("Deep inspect failed for %s", exe)
+                    logging.exception(f"Deep inspect failed for {exe}")
 
-    print(Fore.MAGENTA + "=== Scan Complete ===" + Style.RESET_ALL)
-    logging.info("Scan complete")
+    write_log(Fore.MAGENTA + "=== Scan Complete ===" + Style.RESET_ALL)
+    write_log("Scan complete")
 
+# -----------------------------
+# Main
+# -----------------------------
 if __name__ == "__main__":
-    print("Keylogger Detector - Starting")
+    write_log("Keylogger Detector - Starting")
     run_full_scan()
