@@ -1,4 +1,3 @@
-
 #inspector.py
 
 import os
@@ -26,43 +25,51 @@ class Inspector:
     def name_matches_signature(self, name: str, signature: str) -> bool:
         if not name:
             return False
-        # token / word-boundary match
-        if re.search(rf'\b{re.escape(signature)}\b', name, flags=re.IGNORECASE):
+        # token / word-boundary match (no IGNORECASE needed; inputs are lowercased)
+        if re.search(rf'\b{re.escape(signature)}\b', name):
             return True
         # basename match
         try:
             base = os.path.basename(name)
-            if signature.lower() == base.lower() or signature.lower() in base.lower():
+            if signature == base or signature in base:
                 return True
         except Exception:
             pass
         return False
 
-    def inspect_process(self, name: str, exe_path: str):
+    def inspect_process(self, name: str, exe_path: str, cmdline: str = ""):
         """
-        Inspect a single process by name and exe path.
+        Inspect a single process by name, exe path, and cmdline.
         Returns reason string if suspicious, otherwise None.
         """
         name_l = name.lower()
         exe_l = (exe_path or "").lower()
+        cmd_l = cmdline.lower()
 
-        # Whitelist check
+        # Whitelist check (include cmdline)
         for w in self.whitelist:
-            if self.name_matches_signature(name_l, w) or self.name_matches_signature(exe_l, w):
+            if (self.name_matches_signature(name_l, w) or
+                self.name_matches_signature(exe_l, w) or
+                self.name_matches_signature(cmd_l, w)):
                 return None
 
-        # Name-based suspicious
+        # Name-based suspicious (include cmdline)
         for s in self.suspicious_names:
-            if self.name_matches_signature(name_l, s):
+            if (self.name_matches_signature(name_l, s) or
+                self.name_matches_signature(exe_l, s) or
+                self.name_matches_signature(cmd_l, s)):
                 return f"name_match:{s}"
 
-        # Path-based heuristics
-        if "\\temp\\" in exe_l or "\\appdata\\local\\temp\\" in exe_l or "/tmp/" in exe_l:
-            return "exe_in_temp_folder"
-
-        # Suspicious if run from downloads
-        if "\\downloads\\" in exe_l or "/home" in exe_l and "/downloads" in exe_l:
-            return "exe_in_downloads"
+        # Path-based heuristics (check exe and cmdline)
+        full_paths = [p for p in [exe_l, cmd_l] if p]
+        for path in full_paths:
+            if "\\temp\\" in path or "\\appdata\\local\\temp\\" in path or "/tmp/" in path:
+                return "exe_in_temp_folder"
+            if "\\downloads\\" in path:
+                return "exe_in_downloads"
+            # Tightened Linux downloads check
+            if self.platform == "linux" and os.path.expanduser("~").lower() in path and "/downloads" in path:
+                return "exe_in_downloads"
 
         return None
 
@@ -103,17 +110,29 @@ class Inspector:
                     if out.returncode != 0:
                         continue
                     for line in out.stdout.splitlines():
-                        if "REG_SZ" in line:
-                            parts = line.split("    ")
-                            name = parts[0].strip() if parts else ""
-                            path = parts[-1].strip() if parts else ""
+                        match = re.match(r'^\s*(.+?)\s+(REG_SZ|REG_EXPAND_SZ)\s+(.*)$', line)
+                        if match:
+                            name = match.group(1).strip()
+                            reg_type = match.group(2)
+                            path = match.group(3).strip()
+                            if reg_type == "REG_EXPAND_SZ":
+                                path = os.path.expandvars(path)
+                            name_l = name.lower()
+                            path_l = path.lower()
+                            # Whitelist check
+                            whitelisted = False
+                            for w in self.whitelist:
+                                if self.name_matches_signature(name_l, w) or self.name_matches_signature(path_l, w):
+                                    whitelisted = True
+                                    break
+                            if whitelisted:
+                                continue
                             small_reason = None
-                            p = path.lower()
                             for s in self.suspicious_names:
-                                if self.name_matches_signature(name, s) or self.name_matches_signature(p, s):
+                                if self.name_matches_signature(name_l, s) or self.name_matches_signature(path_l, s):
                                     small_reason = f"autostart_name_or_path_match:{s}"
                                     break
-                            if "\\temp\\" in p or "\\downloads\\" in p:
+                            if "\\temp\\" in path_l or "\\downloads\\" in path_l:
                                 small_reason = "autostart_exe_in_temp_or_downloads"
                             if small_reason:
                                 suspects.append({"name": name, "path": path, "reason": small_reason})
@@ -130,9 +149,18 @@ class Inspector:
                     try:
                         with open(path, "r", encoding="utf-8", errors="ignore") as file:
                             content = file.read().lower()
+                            # Whitelist check
+                            whitelisted = False
+                            for w in self.whitelist:
+                                if self.name_matches_signature(content, w) or self.name_matches_signature(f.lower(), w):
+                                    whitelisted = True
+                                    break
+                            if whitelisted:
+                                continue
                             for s in self.suspicious_names:
                                 if self.name_matches_signature(content, s):
                                     suspects.append({"name": f, "path": path, "reason": f"autostart_file_content_match:{s}"})
+                                    break
                     except Exception:
                         logging.debug("Failed to read autostart file: %s", path)
 
@@ -154,17 +182,40 @@ class Inspector:
                 for line in out.stdout.splitlines():
                     if not line.strip():
                         if block:
-                            taskname = block.get('TaskName', '').lower()
-                            taskrun = block.get('Task To Run', '').lower() or block.get('Task To Run:', '').lower()
-                            for s in self.suspicious_names:
-                                if self.name_matches_signature(taskname, s) or self.name_matches_signature(taskrun, s):
-                                    suspects.append({"task": block.get('TaskName'), "run": block.get('Task To Run'), "reason": f"task_match:{s}"})
+                            # Process block
+                            taskname = (block.get('TaskName', '') or '').lower()
+                            taskrun = (block.get('Task To Run', '') or block.get('Task To Run:', '') or '').lower()
+                            # Whitelist check
+                            whitelisted = False
+                            for w in self.whitelist:
+                                if self.name_matches_signature(taskname, w) or self.name_matches_signature(taskrun, w):
+                                    whitelisted = True
                                     break
+                            if not whitelisted:
+                                for s in self.suspicious_names:
+                                    if self.name_matches_signature(taskname, s) or self.name_matches_signature(taskrun, s):
+                                        suspects.append({"task": block.get('TaskName'), "run": block.get('Task To Run'), "reason": f"task_match:{s}"})
+                                        break
                             block = {}
                     else:
                         if ":" in line:
                             k, v = line.split(":", 1)
-                            block[k.strip()] = v.strip()
+                            block[k.strip().lower()] = v.strip()  # Normalize key to lower
+                # Process last block if exists
+                if block:
+                    taskname = (block.get('taskname', '') or '').lower()
+                    taskrun = (block.get('task to run', '') or '').lower()
+                    # Whitelist check
+                    whitelisted = False
+                    for w in self.whitelist:
+                        if self.name_matches_signature(taskname, w) or self.name_matches_signature(taskrun, w):
+                            whitelisted = True
+                            break
+                    if not whitelisted:
+                        for s in self.suspicious_names:
+                            if self.name_matches_signature(taskname, s) or self.name_matches_signature(taskrun, s):
+                                suspects.append({"task": block.get('TaskName'), "run": block.get('Task To Run'), "reason": f"task_match:{s}"})
+                                break
             except Exception:
                 logging.exception("inspect_scheduled_tasks failed")
 
@@ -185,9 +236,19 @@ class Inspector:
                     try:
                         with open(path, "r", encoding="utf-8", errors="ignore") as f:
                             content = f.read().lower()
+                            path_l = path.lower()
+                            # Whitelist check
+                            whitelisted = False
+                            for w in self.whitelist:
+                                if self.name_matches_signature(content, w) or self.name_matches_signature(path_l, w):
+                                    whitelisted = True
+                                    break
+                            if whitelisted:
+                                continue
                             for s in self.suspicious_names:
                                 if self.name_matches_signature(content, s):
                                     suspects.append({"source": "cronfile", "path": path, "reason": f"cronfile_match:{s}"})
+                                    break
                     except PermissionError:
                         logging.debug("Skipping unreadable cron file: %s", path)
                         continue
