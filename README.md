@@ -71,8 +71,7 @@ cd keylogger-detector
 
 ## Screenshots
 
-    ![Keylogger Detector Scan](C:\Users\student43\Pictures\Screenshots\scan_output.png
-)
+    ![Scan output screenshot](screenshots/scan_output.png)
 
 ## License
 
