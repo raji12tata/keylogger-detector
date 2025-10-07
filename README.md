@@ -71,8 +71,8 @@ cd keylogger-detector
 
 ## Screenshots
 
-    ![Scan output screenshot](screenshots/scan_output.png)
+   ![Scan output screenshot](screenshots/scan_output.png)
 
 ## License
 
-This project is licensed under the MIT License – see the LICENSE file for details.S
+This project is licensed under the MIT License – see the LICENSE file for details.
