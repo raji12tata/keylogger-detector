@@ -1,4 +1,4 @@
-# config.yaml - simple runtime toggles
+# config.yaml - simple runtime toggles for keylogger_detector
 inspect_autostart: true
 inspect_scheduled_tasks: true
 deep_inspect: true
