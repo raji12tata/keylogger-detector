@@ -1,3 +1,4 @@
+# These files are used to ignore temporary or machine-specific files when tracking changes.
 __pycache__/
 *.pyc
 *.pyo
