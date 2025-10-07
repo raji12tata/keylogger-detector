@@ -1,3 +1,4 @@
+#requirements.txt
 psutil>=5.9.0
 colorama>=0.4.6
 pyyaml>=6.0
