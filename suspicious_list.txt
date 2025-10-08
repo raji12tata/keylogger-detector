@@ -1,4 +1,9 @@
 # suspicious process name patterns (lowercase substrings)
+#INSA
+#insa
+#raji
+#worm
+#tola
 keylogger
 logger
 kl
