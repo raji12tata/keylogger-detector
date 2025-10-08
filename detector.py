@@ -1,13 +1,11 @@
 """
 detector.py
-Main entry point for Keylogger Detector (Windows).
+Main entry point for Keylogger Detector (Cross-Platform).
 Scans processes, autostart entries, scheduled tasks and optionally inspects suspicious EXE files.
 Educational use only.
 """
 
 import os
-import time
-import logging
 from datetime import datetime
 from colorama import init as colorama_init, Fore, Style
 import psutil
@@ -19,21 +17,23 @@ from notifier import notify_console
 colorama_init(autoreset=True)
 
 # -----------------------------
-# Setup logs folder
+# Setup logs folder and logging
 # -----------------------------
 LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
-logfile = os.path.join(LOG_DIR, f"detector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+log_filename = f"detector_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logfile = os.path.join(LOG_DIR, log_filename)
 
-# Configure logging
+# Configure logging: file + single console handler (no dupes)
+import logging
 logging.basicConfig(
-    filename=logfile,
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(logfile),
+        logging.StreamHandler()  # Single console output
+    ]
 )
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-logging.getLogger("").addHandler(console)
 
 # -----------------------------
 # Load configuration
@@ -48,47 +48,35 @@ WHITELIST_PATH = os.path.join(os.path.dirname(__file__), "whitelist.txt")
 inspector = Inspector(suspicious_list_path=SUSPICIOUS_LIST_PATH, whitelist_path=WHITELIST_PATH)
 
 # -----------------------------
-# Logging helper
-# -----------------------------
-def write_log(message, level="info"):
-    """
-    Log message to both console and log file
-    level: 'info' or 'warning'
-    """
-    if level == "warning":
-        logging.warning(message)
-    else:
-        logging.info(message)
-    print(message)  # keep console output
-
-# -----------------------------
 # Scan running processes
 # -----------------------------
 def scan_processes():
-    write_log(Fore.CYAN + "[*] Scanning running processes..." + Style.RESET_ALL)
-    write_log("Starting process scan")
+    print(Fore.CYAN + "[*] Scanning running processes..." + Style.RESET_ALL)
+    logging.info("Starting process scan")
     detections = []
 
-    for proc in psutil.process_iter(['pid', 'name', 'exe', 'username']):
+    for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline', 'username']):
         try:
             pid = proc.info['pid']
             name = (proc.info['name'] or "").lower()
             exe = proc.info.get('exe') or ""
+            cmdline = ' '.join(proc.info.get('cmdline', [])).lower() if proc.info.get('cmdline') else ""
             username = proc.info.get('username') or ""
 
-            reason = inspector.inspect_process(name=name, exe_path=exe)
+            reason = inspector.inspect_process(name=name, exe_path=exe, cmdline=cmdline)
             if reason:
                 detection = {
-                    "pid": pid, "name": name, "exe": exe, "username": username, "reason": reason
+                    "pid": pid, "name": name, "exe": exe, "cmdline": cmdline, "username": username, "reason": reason
                 }
                 detections.append(detection)
-                write_log(f"[!] Suspicious process detected: {detection}", level="warning")
+                logging.warning(f"Suspicious process: {detection}")
                 notify_console(detection)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
 
     if not detections:
-        write_log(Fore.GREEN + "[✓] No suspicious processes detected." + Style.RESET_ALL)
+        print(Fore.GREEN + "[✓] No suspicious processes detected." + Style.RESET_ALL)
+        logging.info("No suspicious processes detected.")
 
     return detections
 
@@ -96,8 +84,9 @@ def scan_processes():
 # Run full scan
 # -----------------------------
 def run_full_scan():
-    write_log(Fore.MAGENTA + "=== Keylogger Detector: Full Scan ===" + Style.RESET_ALL)
-    
+    print(Fore.MAGENTA + "=== Keylogger Detector: Full Scan ===" + Style.RESET_ALL)
+    logging.info("Running full scan")
+
     # 1. Processes
     proc_detections = scan_processes()
 
@@ -107,7 +96,7 @@ def run_full_scan():
             ats = inspector.inspect_autostart()
             if ats:
                 for item in ats:
-                    write_log(f"[!] Autostart suspicion: {item}", level="warning")
+                    logging.warning(f"Autostart suspicion: {item}")
                     notify_console(item)
         except Exception as e:
             logging.exception("Autostart inspection failed")
@@ -118,7 +107,7 @@ def run_full_scan():
             st = inspector.inspect_scheduled_tasks()
             if st:
                 for item in st:
-                    write_log(f"[!] Scheduled task suspicion: {item}", level="warning")
+                    logging.warning(f"Scheduled task suspicion: {item}")
                     notify_console(item)
         except Exception as e:
             logging.exception("Scheduled task inspection failed")
@@ -126,22 +115,23 @@ def run_full_scan():
     # 4. Optional: Deep inspect suspicious EXEs
     if CONFIG.get("deep_inspect", False):
         for d in proc_detections:
-            exe = d.get("exe")
+            exe = d.get("exe") or d.get("cmdline", "").split()[-1] if d.get("cmdline") else ""
             if exe and os.path.exists(exe):
                 try:
                     deep = inspector.deep_inspect_exe(exe)
                     if deep:
-                        write_log(f"[!] Deep inspect result for {exe}: {deep}", level="warning")
-                        notify_console({"exe": exe, "reason": deep})
+                        logging.info(f"Deep inspect result for {exe}: {deep}")
+                        notify_console({"exe": exe, "details": deep})
                 except Exception:
                     logging.exception(f"Deep inspect failed for {exe}")
 
-    write_log(Fore.MAGENTA + "=== Scan Complete ===" + Style.RESET_ALL)
-    write_log("Scan complete")
+    print(Fore.MAGENTA + "=== Scan Complete ===" + Style.RESET_ALL)
+    logging.info("Scan complete")
 
 # -----------------------------
 # Main
 # -----------------------------
 if __name__ == "__main__":
-    write_log("Keylogger Detector - Starting")
+    print("Keylogger Detector - Starting")
+    logging.info("Keylogger Detector - Starting")
     run_full_scan()
