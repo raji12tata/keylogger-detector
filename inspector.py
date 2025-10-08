@@ -1,5 +1,4 @@
 #inspector.py
-
 import os
 import hashlib
 import subprocess
@@ -46,21 +45,37 @@ class Inspector:
         exe_l = (exe_path or "").lower()
         cmd_l = cmdline.lower()
 
-        # Whitelist check (include cmdline)
-        for w in self.whitelist:
-            if (self.name_matches_signature(name_l, w) or
-                self.name_matches_signature(exe_l, w) or
-                self.name_matches_signature(cmd_l, w)):
-                return None
+        # Whitelist check (only on name and exe; allow cmdline/path to trigger suspicious)
+        whitelisted = any(
+            self.name_matches_signature(name_l, w) or self.name_matches_signature(exe_l, w)
+            for w in self.whitelist
+        )
 
-        # Name-based suspicious (include cmdline)
+        if whitelisted:
+            # Check cmdline for suspicious to override
+            for s in self.suspicious_names:
+                if self.name_matches_signature(cmd_l, s):
+                    return f"name_match:{s}"
+            # Check paths for whitelisted processes
+            full_paths = [p for p in [exe_l, cmd_l] if p]
+            for path in full_paths:
+                if "\\temp\\" in path or "\\appdata\\local\\temp\\" in path or "/tmp/" in path:
+                    return "exe_in_temp_folder"
+                if "\\downloads\\" in path:
+                    return "exe_in_downloads"
+                # Tightened Linux downloads check
+                if self.platform == "linux" and os.path.expanduser("~").lower() in path and "/downloads" in path:
+                    return "exe_in_downloads"
+            return None
+
+        # If not whitelisted, check suspicious on all
         for s in self.suspicious_names:
             if (self.name_matches_signature(name_l, s) or
                 self.name_matches_signature(exe_l, s) or
                 self.name_matches_signature(cmd_l, s)):
                 return f"name_match:{s}"
 
-        # Path-based heuristics (check exe and cmdline)
+        # Path-based for non-whitelisted
         full_paths = [p for p in [exe_l, cmd_l] if p]
         for path in full_paths:
             if "\\temp\\" in path or "\\appdata\\local\\temp\\" in path or "/tmp/" in path:
