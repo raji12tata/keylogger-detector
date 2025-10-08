@@ -1,11 +1,31 @@
-# whitelist common legitimate process substrings
+
+# Whitelist common legitimate process substrings
+# (One per line; case-insensitive in code. Comment python for testing.)
+
+# Browsers (cross-platform)
 chrome
 firefox
 msedge
-explorer
-python
-svchost
-system
-wininit
-winlogon
-services
+
+# Shell/Terminals (Linux focus)
+bash
+gnome-terminal
+konsole
+xterm
+
+# System services (Linux)
+systemd
+dbus-daemon
+polkitd
+logrotate
+
+# Windows system (uncomment for Windows testing)
+# explorer
+# svchost
+# system
+# wininit
+# winlogon
+# services
+
+# Temporarily commented for keylogger testing (uncomment later)
+# python
